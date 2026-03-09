@@ -108,7 +108,6 @@ export default async function ClubDetailPage({ params }: Props) {
       </div>
 
       <div className="bg-white  overflow-hidden">
-        <div className="h-32 bg-linear-to-br from-green-600 to-green-800" />
         <div className="px-6 sm:px-8 pb-6 mt-8 mb-4">
           <div className="flex items-end gap-5 -mt-12 mb-5 flex-wrap">
             {/* Crest */}
