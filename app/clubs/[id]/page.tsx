@@ -107,7 +107,7 @@ export default async function ClubDetailPage({ params }: Props) {
         <span className="text-gray-700">{fdTeam.shortName || fdTeam.name}</span>
       </div>
 
-      <div className="bg-white  overflow-hidden">
+      <div className="bg-white  overflow-hidden mt-4">
         <div className="px-6 sm:px-8 pb-6 mt-8 mb-4">
           <div className="flex items-end gap-5 -mt-12 mb-5 flex-wrap">
             {/* Crest */}
