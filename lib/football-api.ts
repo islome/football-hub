@@ -1,3 +1,5 @@
+import { unstable_cache } from "next/cache";
+
 const BASE_URL = process.env.FOOTBALL_API_BASE_URL || "https://api.football-data.org/v4";
 const TOKEN = process.env.FOOTBALL_API_TOKEN || "";
 
@@ -134,17 +136,25 @@ export async function getLiveMatches() {
   return data.matches;
 }
 
-export async function getTeams(leagueCode: LeagueCode) {
-  const data = await footballFetch<{ teams: Team[] }>(
-    `/competitions/${leagueCode}/teams`,
-    21600
-  );
-  return data.teams;
-}
+export const getTeams = unstable_cache(
+  async (leagueCode: LeagueCode) => {
+    const data = await footballFetch<{ teams: Team[] }>(
+      `/competitions/${leagueCode}/teams`,
+      86400
+    );
+    return data.teams;
+  },
+  ["teams"],
+  { revalidate: 86400 } // 24 soat
+);
 
-export async function getTeam(teamId: number) {
-  return footballFetch<Team>(`/teams/${teamId}`, 21600);
-}
+export const getTeam = unstable_cache(
+  async (teamId: number) => {
+    return footballFetch<Team>(`/teams/${teamId}`, 86400);
+  },
+  ["team"],
+  { revalidate: 86400 }
+);
 
 // Squad alohida — /teams/{id} + ?squad=true emas, balki to'g'ridan squad field keladi
 // Lekin free tier da squad bo'sh kelishi mumkin, shuning uchun competitions orqali olamiz

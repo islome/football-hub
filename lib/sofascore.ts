@@ -1,3 +1,5 @@
+import { unstable_cache } from "next/cache";
+
 // lib/sofascore.ts
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "";
 const BASE_URL = "https://sofascore.p.rapidapi.com";
@@ -196,19 +198,22 @@ export async function getSofascorePlayerCharacteristics(playerId: number) {
 
 // ─── Team API ─────────────────────────────────────────────────
 
-export async function searchSofascoreTeam(name: string): Promise<number | null> {
-  try {
-    const data = await sofaFetch<any>(`/search?q=${encodeURIComponent(name)}`);
-    const teams = (data?.results || []).filter((r: any) => r.type === "team");
-    if (!teams.length) return null;
-    // Eng mos kelganini topamiz
-    const exact = teams.find((t: any) =>
-      t.entity.name.toLowerCase() === name.toLowerCase() ||
-      t.entity.shortName?.toLowerCase() === name.toLowerCase()
-    );
-    return exact?.entity?.id || teams[0]?.entity?.id || null;
-  } catch { return null; }
-}
+export const searchSofascoreTeam = unstable_cache(
+  async (name: string): Promise<number | null> => {
+    try {
+      const data = await sofaFetch<any>(`/search?q=${encodeURIComponent(name)}`);
+      const teams = (data?.results || []).filter((r: any) => r.type === "team");
+      if (!teams.length) return null;
+      const exact = teams.find((t: any) =>
+        t.entity.name.toLowerCase() === name.toLowerCase() ||
+        t.entity.shortName?.toLowerCase() === name.toLowerCase()
+      );
+      return exact?.entity?.id || teams[0]?.entity?.id || null;
+    } catch { return null; }
+  },
+  ["sofa-team-search"],
+  { revalidate: 86400 } // 24 soat — team ID lar o'zgarmaydi
+);
 
 export async function getSofascoreTeam(teamId: number) {
   try {
