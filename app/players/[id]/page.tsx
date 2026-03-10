@@ -164,7 +164,7 @@ export default async function PlayerDetailPage({ params }: Props) {
       </div>
 
       <div className="bg-white  overflow-hidden">
-        <div className="px-5 sm:px-8 pb-6 mt-4">
+        <div className="pt-8 sm:px-8 pb-6 mt-8">
           <div className="flex items-end gap-5 -mt-14 mb-5 flex-wrap">
             {/* Avatar */}
             <div className="relative shrink-0">
