@@ -15,12 +15,10 @@ export const LEAGUE_CONFIG: Record<string, { tournamentId: number; seasonId: num
   PD: { tournamentId: 8,  seasonId: 77559 },
 };
 
-async function sofaFetch<T>(endpoint: string, revalidate: number | false = 300): Promise<T> {
+async function sofaFetch<T>(endpoint: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${endpoint}`, {
     headers: HEADERS,
-    ...(revalidate === false
-      ? { cache: "no-store" }
-      : { next: { revalidate } }),
+    next: { revalidate: 300 },
   });
   if (!res.ok) throw new Error(`Sofascore error: ${res.status}`);
   return res.json();
@@ -59,8 +57,7 @@ export async function findSofascoreMatchId(
     for (let page = 0; page < 3; page++) {
       try {
         const data = await sofaFetch<any>(
-          `/tournaments/get-last-matches?tournamentId=${tournamentId}&seasonId=${seasonId}&page=${page}`,
-          false
+          `/tournaments/get-last-matches?tournamentId=${tournamentId}&seasonId=${seasonId}&page=${page}`
         );
         const events: any[] = data?.events || [];
         if (!events.length) break;
@@ -81,7 +78,7 @@ export async function findSofascoreMatchId(
 // ─── Lineup ───────────────────────────────────────────────────
 export async function getSofascoreLineups(matchId: number) {
   try {
-    return await sofaFetch<any>(`/matches/get-lineups?matchId=${matchId}`, false);
+    return await sofaFetch<any>(`/matches/get-lineups?matchId=${matchId}`);
   } catch {
     return null;
   }
@@ -90,7 +87,7 @@ export async function getSofascoreLineups(matchId: number) {
 // ─── Statistics ───────────────────────────────────────────────
 export async function getSofascoreStatistics(matchId: number) {
   try {
-    const data = await sofaFetch<any>(`/matches/get-statistics?matchId=${matchId}`, false);
+    const data = await sofaFetch<any>(`/matches/get-statistics?matchId=${matchId}`);
     return data?.statistics || [];
   } catch {
     return [];
@@ -100,7 +97,7 @@ export async function getSofascoreStatistics(matchId: number) {
 // ─── Incidents ────────────────────────────────────────────────
 export async function getSofascoreIncidents(matchId: number) {
   try {
-    const data = await sofaFetch<any>(`/matches/get-incidents?matchId=${matchId}`, false);
+    const data = await sofaFetch<any>(`/matches/get-incidents?matchId=${matchId}`);
     return data?.incidents || [];
   } catch {
     return [];
