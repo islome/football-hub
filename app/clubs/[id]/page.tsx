@@ -10,7 +10,26 @@ import {
   getSofascoreTeamImage,
 } from "@/lib/sofascore";
 
-export const revalidate = 3600;
+export const revalidate = 86400; // 24 soat
+
+// Mashhur klublar — build vaqtida statik generate qilinadi
+export async function generateStaticParams() {
+  const popularIds = [
+    57,
+    61,
+    64,
+    65,
+    66,
+    73, // PL top clubs
+    86,
+    81,
+    78, // La Liga
+    5,
+    109,
+    98, // CL teams
+  ];
+  return popularIds.map((id) => ({ id: String(id) }));
+}
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -91,10 +110,12 @@ export default async function ClubDetailPage({ params }: Props) {
   const sofaImageUrl = sofaTeamId ? getSofascoreTeamImage(sofaTeamId) : null;
   const teamCrest = fdTeam.crest || sofaImageUrl;
 
+  // Team colors from football-data
   const primaryColor = "#16a34a";
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-5">
+      {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-400 flex-wrap">
         <Link href="/" className="hover:text-green-600 transition-colors">
           Bosh sahifa
@@ -107,11 +128,13 @@ export default async function ClubDetailPage({ params }: Props) {
         <span className="text-gray-700">{fdTeam.shortName || fdTeam.name}</span>
       </div>
 
-      <div className="bg-white  overflow-hidden mt-4">
-        <div className="px-6 sm:px-8 pb-6 mt-8 mb-4">
+      {/* ── Club Hero ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="h-32 bg-linear-to-br from-green-600 to-green-800" />
+        <div className="px-6 sm:px-8 pb-6">
           <div className="flex items-end gap-5 -mt-12 mb-5 flex-wrap">
             {/* Crest */}
-            <div className="w-24 h-24 flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="w-24 h-24 rounded-2xl border-4 border-white shadow-lg bg-white flex items-center justify-center shrink-0 overflow-hidden">
               {teamCrest ? (
                 <Image
                   src={teamCrest}
@@ -145,7 +168,7 @@ export default async function ClubDetailPage({ params }: Props) {
             {fdTeam.founded && (
               <div className="pb-1 text-right">
                 <div className="text-2xl font-black text-gray-900">
-                  {fdTeam.founded}y
+                  {fdTeam.founded}
                 </div>
                 <div className="text-xs text-gray-400">Tashkil etilgan</div>
               </div>
@@ -182,10 +205,11 @@ export default async function ClubDetailPage({ params }: Props) {
         </div>
       </div>
 
+      {/* ── Squad ── */}
       {squad.length > 0 && (
-        <div className="bg-white  overflow-hidden mb-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-3xl font-bold text-gray-900">👥 Tarkib</h2>
+            <h2 className="font-bold text-gray-900">👥 Tarkib</h2>
           </div>
           <div className="divide-y divide-gray-50">
             {POS_ORDER.map((pos) => {
@@ -236,7 +260,7 @@ export default async function ClubDetailPage({ params }: Props) {
                           {/* Avatar */}
                           <div className="relative shrink-0">
                             <img
-                              src={"https://img.freepik.com/premium-vector/soccer-player-black-simple-icon-isolated-white-background_98402-68338.jpg" }
+                              src={`/api/player-image?playerId=${playerId}`}
                               alt={player.name}
                               width={40}
                               height={40}
@@ -245,7 +269,7 @@ export default async function ClubDetailPage({ params }: Props) {
                             />
                             {num !== "" && (
                               <div
-                                className="absolute -right-1 w-5 h-5 rounded-full border border-white flex items-center justify-center text-white text-xs font-black"
+                                className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border border-white flex items-center justify-center text-white text-xs font-black"
                                 style={{
                                   backgroundColor: colors.bg,
                                   fontSize: "9px",
@@ -281,7 +305,7 @@ export default async function ClubDetailPage({ params }: Props) {
                               €
                               {(
                                 player.proposedMarketValueRaw.value / 1_000_000
-                              ).toFixed(2)}
+                              ).toFixed(0)}
                               M
                             </div>
                           )}
@@ -312,9 +336,9 @@ export default async function ClubDetailPage({ params }: Props) {
 
       {/* ── Next Matches ── */}
       {nextMatches.length > 0 && (
-        <div className="bg-white rounded-2xl mb-4 border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-900">📅 Keyingi Matchlar</h2>
+            <h2 className="font-bold text-gray-900">📅 Keyingi Matchlar</h2>
           </div>
           <div className="divide-y divide-gray-50">
             {nextMatches.slice(0, 5).map((event: any, i: number) => {
@@ -362,7 +386,7 @@ export default async function ClubDetailPage({ params }: Props) {
       {lastMatches.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-900">🏟 So'nggi Matchlar</h2>
+            <h2 className="font-bold text-gray-900">🏟 So'nggi Matchlar</h2>
           </div>
           <div className="divide-y divide-gray-50">
             {lastMatches.slice(0, 8).map((event: any, i: number) => {

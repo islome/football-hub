@@ -14,6 +14,11 @@ import { ErrorMessage } from "@/components/ui";
 
 export const revalidate = 1800;
 
+// Ligalar — build vaqtida statik generate
+export async function generateStaticParams() {
+  return ["PL", "CL", "PD"].map((code) => ({ code }));
+}
+
 interface Props {
   params: Promise<{ code: string }>;
   searchParams: Promise<{ tab?: string }>;

@@ -14,21 +14,35 @@ export type LeagueCode = keyof typeof LEAGUES;
 async function footballFetch<T>(
   endpoint: string,
   revalidate: number = 3600,
-  extraHeaders: Record<string, string> = {}
+  extraHeaders: Record<string, string> = {},
+  retries = 3
 ): Promise<T> {
-  const res = await fetch(`${BASE_URL}${endpoint}`, {
-    headers: {
-      "X-Auth-Token": TOKEN,
-      ...extraHeaders,
-    },
-    next: { revalidate },
-  });
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const res = await fetch(`${BASE_URL}${endpoint}`, {
+      headers: {
+        "X-Auth-Token": TOKEN,
+        ...extraHeaders,
+      },
+      next: { revalidate },
+    });
 
-  if (!res.ok) {
-    throw new Error(`Football API error: ${res.status} - ${res.statusText}`);
+    // 429 — rate limit, kutib qayta urinamiz
+    if (res.status === 429) {
+      if (attempt < retries - 1) {
+        const waitMs = (attempt + 1) * 12000; // 12s, 24s, 36s
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+      throw new Error(`Football API error: 429 - Too Many Requests`);
+    }
+
+    if (!res.ok) {
+      throw new Error(`Football API error: ${res.status} - ${res.statusText}`);
+    }
+
+    return res.json();
   }
-
-  return res.json();
+  throw new Error("Football API: max retries exceeded");
 }
 
 // ─── Types ───────────────────────────────────────────────────
