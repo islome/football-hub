@@ -164,13 +164,6 @@ export default async function PlayerDetailPage({ params }: Props) {
       </div>
 
       <div className="bg-white  overflow-hidden">
-        <div
-          className="h-28"
-          style={{
-            background: `linear-gradient(135deg, ${posColor}cc, ${posColor}55)`,
-          }}
-        />
-
         <div className="px-5 sm:px-8 pb-6 mt-4">
           <div className="flex items-end gap-5 -mt-14 mb-5 flex-wrap">
             {/* Avatar */}
@@ -180,7 +173,7 @@ export default async function PlayerDetailPage({ params }: Props) {
                 alt={player.name}
                 width={96}
                 height={96}
-                className="w-24 h-24 object-cover bg-gray-100"
+                className="w-24 h-24 object-cover"
               />
               {/* Jersey number */}
               <div
