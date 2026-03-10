@@ -163,7 +163,7 @@ export default async function PlayerDetailPage({ params }: Props) {
         <span className="text-gray-700">{player.name}</span>
       </div>
 
-      <div className="bg-white  overflow-hidden">
+      <div className="bg-white  overflow-hidden pt-3">
         <div className="pt-8 sm:px-8 pb-6 mt-8">
           <div className="flex items-end gap-5 -mt-14 mb-5 flex-wrap">
             {/* Avatar */}
@@ -173,7 +173,7 @@ export default async function PlayerDetailPage({ params }: Props) {
                 alt={player.name}
                 width={96}
                 height={96}
-                className="w-24 h-24 object-cover"
+                className="w-24 h-24 object-cover z-10"
               />
               {/* Jersey number */}
               <div
