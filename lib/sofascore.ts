@@ -36,33 +36,40 @@ export async function findSofascoreMatchId(
     if (!config) return null;
 
     const { tournamentId, seasonId } = config;
-    const data = await sofaFetch<any>(
-      `/tournaments/get-last-matches?tournamentId=${tournamentId}&seasonId=${seasonId}&page=0`
-    );
-
-    const events: any[] = data?.events || [];
-    if (!events.length) return null;
-
     const matchDate = utcDate.split("T")[0];
 
-    const found = events.find((e: any) => {
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const sHome = normalize(homeTeamName);
+    const sAway = normalize(awayTeamName);
+
+    const isMatch = (e: any) => {
       const eDate = new Date(e.startTimestamp * 1000).toISOString().split("T")[0];
       if (eDate !== matchDate) return false;
+      const home = normalize(e.homeTeam?.name || "");
+      const away = normalize(e.awayTeam?.name || "");
+      // To'liq yoki qisman moslik
+      const homeOk = home.includes(sHome.slice(0, 5)) || sHome.includes(home.slice(0, 5));
+      const awayOk = away.includes(sAway.slice(0, 5)) || sAway.includes(away.slice(0, 5));
+      return homeOk && awayOk;
+    };
 
-      const home = (e.homeTeam?.name || "").toLowerCase();
-      const away = (e.awayTeam?.name || "").toLowerCase();
-      const sHome = homeTeamName.toLowerCase();
-      const sAway = awayTeamName.toLowerCase();
+    // 3 ta page tekshiramiz (har page ~10 match)
+    for (let page = 0; page < 3; page++) {
+      try {
+        const data = await sofaFetch<any>(
+          `/tournaments/get-last-matches?tournamentId=${tournamentId}&seasonId=${seasonId}&page=${page}`
+        );
+        const events: any[] = data?.events || [];
+        if (!events.length) break;
 
-      const homeMatch =
-        home.includes(sHome.split(" ")[0]) || sHome.includes(home.split(" ")[0]);
-      const awayMatch =
-        away.includes(sAway.split(" ")[0]) || sAway.includes(away.split(" ")[0]);
+        const found = events.find(isMatch);
+        if (found) return found.id;
+      } catch {
+        break;
+      }
+    }
 
-      return homeMatch && awayMatch;
-    });
-
-    return found?.id || null;
+    return null;
   } catch {
     return null;
   }
