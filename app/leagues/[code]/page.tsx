@@ -151,3 +151,4 @@ export default async function LeaguePage({ params, searchParams }: Props) {
     </div>
   );
 }
+ 
