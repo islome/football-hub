@@ -1,26 +1,28 @@
-import { NextRequest, NextResponse } from "next/server";
+// app/team-image/route.ts
+import { getTeamLogo } from "@/lib/football";
 
-export async function GET(request: NextRequest) {
-  const teamId = request.nextUrl.searchParams.get("teamId");
-  if (!teamId) return new NextResponse("teamId kerak", { status: 400 });
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const teamId = searchParams.get("teamId");
+  const logo = await getTeamLogo(8650);
 
-  const res = await fetch(
-    `https://sofascore.p.rapidapi.com/teams/get-logo?teamId=${teamId}`,
-    {
-      headers: {
-        "x-rapidapi-key": process.env.RAPIDAPI_KEY || "",
-        "x-rapidapi-host": "sofascore.p.rapidapi.com",
-      },
-      next: { revalidate: 86400 },
-    }
-  );
+  if (!teamId) {
+    return new Response("teamId kerak", { status: 400 });
+  }
 
-  if (!res.ok) return new NextResponse("Rasm topilmadi", { status: 404 });
+  const url = await getTeamLogo(teamId);
 
-  const buffer = await res.arrayBuffer();
-  return new NextResponse(buffer, {
+  if (!url) {
+    return new Response("Logo topilmadi", { status: 404 });
+  }
+
+  // Rasmni proxy qilib qaytarish
+  const img = await fetch(url);
+  const buffer = await img.arrayBuffer();
+
+  return new Response(buffer, {
     headers: {
-      "Content-Type": "image/png",
+      "Content-Type": img.headers.get("Content-Type") || "image/png",
       "Cache-Control": "public, max-age=86400",
     },
   });
