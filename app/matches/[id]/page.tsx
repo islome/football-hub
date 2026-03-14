@@ -180,7 +180,6 @@ export default async function MatchDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-5">
-      {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-400 flex-wrap">
         <Link href="/" className="hover:text-green-600 transition-colors">
           Bosh sahifa
@@ -198,11 +197,9 @@ export default async function MatchDetailPage({ params }: Props) {
         </span>
       </div>
 
-      {/* ── Score Card ── */}
       <div
         className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${isLive ? "border-red-200" : "border-gray-100"}`}
       >
-        {/* Header */}
         <div className="bg-gray-50 border-b border-gray-100 px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {match.competition.emblem && (
@@ -235,13 +232,12 @@ export default async function MatchDetailPage({ params }: Props) {
           </span>
         </div>
 
-        {/* Teams & Score */}
         <div className="px-6 py-8">
           <div className="flex items-center justify-between gap-4">
             {/* Home */}
             <Link
               href={`/clubs/${match.homeTeam.id}`}
-              className="flex flex-col items-center gap-3 flex-1 hover:opacity-80 transition-opacity group"
+              className="flex flex-col items-center gap-3 flex-1 group"
             >
               {match.homeTeam.crest ? (
                 <Image
@@ -277,12 +273,12 @@ export default async function MatchDetailPage({ params }: Props) {
                 <>
                   <div className="text-5xl sm:text-6xl font-black text-gray-900 tabular-nums">
                     {homeScore ?? 0}
-                    <span className="text-gray-300 mx-2">–</span>
+                    <span className="text-gray-300 mx-2">~</span>
                     {awayScore ?? 0}
                   </div>
                   {homeHalf != null && (
                     <div className="text-xs text-gray-400 mt-1">
-                      YV: {homeHalf}–{awayHalf}
+                      YV: {homeHalf}~{awayHalf}
                     </div>
                   )}
                   {isFinished && match.score.winner && (
@@ -311,7 +307,7 @@ export default async function MatchDetailPage({ params }: Props) {
             {/* Away */}
             <Link
               href={`/clubs/${match.awayTeam.id}`}
-              className="flex flex-col items-center gap-3 flex-1 hover:opacity-80 transition-opacity group"
+              className="flex flex-col items-center gap-3 flex-1 group"
             >
               {match.awayTeam.crest ? (
                 <Image
@@ -343,7 +339,6 @@ export default async function MatchDetailPage({ params }: Props) {
           </div>
         </div>
 
-        {/* Footer info */}
         <div className="bg-gray-50 border-t border-gray-100 px-6 py-3 flex flex-wrap gap-4 justify-center text-xs text-gray-500">
           <span>📅 {formatMatchDate(match.utcDate)}</span>
           {location?.stadium && <span>🏟 {location.stadium}</span>}
@@ -355,11 +350,10 @@ export default async function MatchDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* ── Odds ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">
-            📈 Pul tikish koeffitsientlari
+            📈 Tahminlar jadvali
           </h2>
         </div>
         {odds ? (
@@ -423,7 +417,6 @@ export default async function MatchDetailPage({ params }: Props) {
         )}
       </div>
 
-      {/* ── Statistics tabs ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
           <h2 className="font-bold text-gray-900">📊 Match Statistikasi</h2>
@@ -499,7 +492,6 @@ export default async function MatchDetailPage({ params }: Props) {
         )}
       </div>
 
-      {/* ── Lineups ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
           <h2 className="font-bold text-gray-900">⚽ Tarkib</h2>
@@ -589,7 +581,7 @@ export default async function MatchDetailPage({ params }: Props) {
                   )}
                 </div>
                 <div className="space-y-1">
-                  {awayStarters.map((p: any, i: number) => {
+                  {awayStarters.reverse().map((p: any, i: number) => {
                     const pos = normalizePos(p.position || "M");
                     const colors = POS_COLORS[pos];
                     return (
@@ -684,7 +676,6 @@ export default async function MatchDetailPage({ params }: Props) {
         )}
       </div>
 
-      {/* ── Highlights ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">🎬 Highlights</h2>
@@ -735,7 +726,6 @@ export default async function MatchDetailPage({ params }: Props) {
         )}
       </div>
 
-      {/* ── Team links ── */}
       <div className="grid grid-cols-2 gap-4">
         {[
           { team: match.homeTeam, label: "Uy egasi" },

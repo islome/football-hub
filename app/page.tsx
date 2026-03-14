@@ -48,16 +48,18 @@ export default async function HomePage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
-      {/* ── Hero ── */}
       <section className="relative bg-linear-to-br from-green-700 to-green-900 rounded-2xl overflow-hidden text-white px-8 py-14">
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-4 right-10 w-64 h-64 rounded-full border-4 border-white" />
-          <div className="absolute -bottom-8 -right-8 w-48 h-48 rounded-full border-4 border-white" />
+        <div className="absolute inset-0 right-1.5">
+          <Image
+            src="/Messi.png"
+            alt="Messi"
+            fill
+            className="object-contain object-bottom-right opacity-30 scale-110"
+            priority
+          />
         </div>
+
         <div className="relative z-10 max-w-2xl">
-          <span className="inline-block bg-white/20 text-white text-xs font-semibold px-3 py-1 rounded-full mb-4 uppercase tracking-wider">
-            🔴 Jonli yangilanadi
-          </span>
           <h1 className="text-4xl sm:text-5xl font-black mb-4 leading-tight">
             Futbolning
             <br />
@@ -70,9 +72,10 @@ export default async function HomePage() {
           <div className="flex flex-wrap gap-3">
             <Link
               href="/live"
-              className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-semibold transition-colors text-sm"
+              className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-semibold transition-colors text-sm"
             >
-              🔴 Jonli Natijalar
+              <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              Live Matches
             </Link>
             <Link
               href="/clubs"
@@ -84,7 +87,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Liga Kartochkalari ── */}
       <section>
         <h2 className="text-xl font-bold text-gray-900 mb-4">Ligalar</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -129,7 +131,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Live Matchlar ── */}
       {liveMatches.length > 0 && (
         <section>
           <div className="flex items-center gap-2 mb-4">

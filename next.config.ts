@@ -4,8 +4,8 @@ const nextConfig: NextConfig = {
     images: {
       localPatterns: [
         {
-      pathname: "/api/player-image",
-      search: "**",
+      pathname: "/**",
+      search: "",
     },
       ],
     remotePatterns: [

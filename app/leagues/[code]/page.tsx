@@ -80,8 +80,8 @@ export default async function LeaguePage({ params, searchParams }: Props) {
             <Image
               src={standings.competition.emblem}
               alt={league.name}
-              width={72}
-              height={72}
+              width={92}
+              height={92}
               className="object-contain drop-shadow-lg"
             />
           )}
