@@ -2,12 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getMatch } from "@/lib/football-api";
-import {
-  findSofascoreMatchId,
-  getSofascoreMatchData,
-  groupByFormation,
-  getIncidentIcon,
-} from "@/lib/sofascore";
+import { getFullMatchData, findEventId } from "@/lib/football";
 import { formatMatchDate, getStatusColor, getStatusLabel } from "@/lib/utils";
 
 export const revalidate = 120;
@@ -28,14 +23,12 @@ export async function generateMetadata({ params }: Props) {
   }
 }
 
-// Position ranglar
 const POS_COLORS: Record<string, { bg: string; border: string }> = {
-  G: { bg: "#f59e0b", border: "#d97706" }, // GK — sariq
-  D: { bg: "#3b82f6", border: "#2563eb" }, // DEF — ko'k
-  M: { bg: "#10b981", border: "#059669" }, // MID — yashil
-  F: { bg: "#ef4444", border: "#dc2626" }, // FWD — qizil
+  G: { bg: "#f59e0b", border: "#d97706" },
+  D: { bg: "#3b82f6", border: "#2563eb" },
+  M: { bg: "#10b981", border: "#059669" },
+  F: { bg: "#ef4444", border: "#dc2626" },
 };
-
 const POS_LABELS: Record<string, string> = {
   G: "GK",
   D: "DEF",
@@ -43,36 +36,87 @@ const POS_LABELS: Record<string, string> = {
   F: "FWD",
 };
 
-// O'yinchi badge komponenti
-function PlayerBadge({ player, side }: { player: any; side: "home" | "away" }) {
-  const pos = player.position || "M";
-  const colors = POS_COLORS[pos] || POS_COLORS["M"];
-  const name = player.player?.shortName || player.player?.name || "";
-  const lastName = name.split(" ").pop() || name;
-  const num = player.shirtNumber ?? player.jerseyNumber ?? "";
+function normalizePos(pos: string): string {
+  if (!pos) return "M";
+  const p = pos.toUpperCase();
+  if (p === "G" || p.includes("GOAL")) return "G";
+  if (p === "D" || p.includes("DEF")) return "D";
+  if (p === "M" || p.includes("MID")) return "M";
+  if (p === "F" || p.includes("FOR") || p.includes("ATT")) return "F";
+  return "M";
+}
+
+// Stats flatten helper
+function flattenStats(
+  groups: any[],
+): { title: string; key: string; home: any; away: any; highlighted: string }[] {
+  return groups
+    .flatMap((g: any) => g.stats || [])
+    .filter((s: any) => s.type !== "title" && s.stats?.[0] != null)
+    .map((s: any) => ({
+      title: s.title,
+      key: s.key,
+      home: s.stats[0],
+      away: s.stats[1],
+      highlighted: s.highlighted || "equal",
+    }));
+}
+
+// Stat bar component
+function StatRow({
+  title,
+  home,
+  away,
+  highlighted,
+}: {
+  title: string;
+  home: any;
+  away: any;
+  highlighted: string;
+}) {
+  const hNum = parseFloat(String(home)) || 0;
+  const aNum = parseFloat(String(away)) || 0;
+  const total = hNum + aNum || 1;
+  const hPct = Math.round((hNum / total) * 100);
+  const aPct = 100 - hPct;
 
   return (
-    <div
-      className="flex flex-col items-center gap-1 group cursor-default"
-      style={{ minWidth: 44 }}
-    >
-      {/* Shirt number circle */}
-      <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-black shadow-lg transition-transform group-hover:scale-110"
-        style={{
-          backgroundColor: colors.bg,
-          border: `2.5px solid ${colors.border}`,
-        }}
-      >
-        {num}
+    <div>
+      <div className="flex justify-between items-center text-sm mb-1.5">
+        <span
+          className={`font-bold w-16 ${highlighted === "home" ? "text-blue-600" : "text-gray-800"}`}
+        >
+          {home}
+        </span>
+        <span className="text-xs text-gray-500 text-center flex-1">
+          {title}
+        </span>
+        <span
+          className={`font-bold w-16 text-right ${highlighted === "away" ? "text-red-500" : "text-gray-800"}`}
+        >
+          {away}
+        </span>
       </div>
-      {/* Name */}
-      <span
-        className="text-white font-semibold text-center leading-tight drop-shadow-sm"
-        style={{ fontSize: "9px", maxWidth: 52, lineHeight: "1.2" }}
-      >
-        {lastName}
-      </span>
+      <div className="flex h-1.5 rounded-full overflow-hidden bg-gray-100">
+        <div
+          className="bg-blue-500 transition-all"
+          style={{ width: `${hPct}%` }}
+        />
+        <div
+          className="bg-red-400 transition-all"
+          style={{ width: `${aPct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Empty state
+function EmptyState({ icon, text }: { icon: string; text: string }) {
+  return (
+    <div className="py-8 text-center">
+      <div className="text-3xl mb-2">{icon}</div>
+      <div className="text-sm text-gray-400">{text}</div>
     </div>
   );
 }
@@ -92,55 +136,50 @@ export default async function MatchDetailPage({ params }: Props) {
 
   const isLive = match.status === "IN_PLAY" || match.status === "LIVE";
   const isFinished = match.status === "FINISHED";
+  const hasStarted = isLive || isFinished;
 
-  // Sofascore data
-  let lineups: any = null;
-  let statistics: any[] = [];
-  let incidents: any[] = [];
-
-  if (isFinished || isLive) {
+  // Yangi API dan event ID topish
+  let fotmobData: Awaited<ReturnType<typeof getFullMatchData>> | null = null;
+  if (hasStarted) {
     try {
-      const sofaId = await findSofascoreMatchId(
+      const eventId = await findEventId(
         match.utcDate,
         match.homeTeam.name,
         match.awayTeam.name,
-        match.competition.code,
       );
-      if (sofaId) {
-        const data = await getSofascoreMatchData(sofaId);
-        lineups = data.lineups;
-        statistics = data.statistics;
-        incidents = data.incidents;
+      if (eventId) {
+        fotmobData = await getFullMatchData(eventId);
       }
     } catch {}
   }
+
+  const score = fotmobData?.score;
+  const statsAll = flattenStats(fotmobData?.statsAll || []);
+  const statsFirst = flattenStats(fotmobData?.statsFirst || []);
+  const statsSecond = flattenStats(fotmobData?.statsSecond || []);
+  const highlights = fotmobData?.highlights;
+  const location = fotmobData?.location;
+  const referee = fotmobData?.referee;
+  const odds = fotmobData?.odds;
+  const lineups = fotmobData?.lineups;
 
   const homePlayers: any[] = lineups?.home?.players || [];
   const awayPlayers: any[] = lineups?.away?.players || [];
   const homeFormation: string = lineups?.home?.formation || "";
   const awayFormation: string = lineups?.away?.formation || "";
-
   const homeStarters = homePlayers.filter((p) => !p.substitute);
   const awayStarters = awayPlayers.filter((p) => !p.substitute);
   const homeBench = homePlayers.filter((p) => p.substitute);
   const awayBench = awayPlayers.filter((p) => p.substitute);
 
-  const homeRows =
-    homeFormation && homeStarters.length > 0
-      ? groupByFormation(homeStarters, homeFormation)
-      : [];
-  const awayRows =
-    awayFormation && awayStarters.length > 0
-      ? groupByFormation(awayStarters, awayFormation)
-      : [];
-
-  const statsGroups = statistics?.[0]?.groups || [];
-  const keyIncidents = incidents.filter(
-    (i: any) => i.incidentType === "goal" || i.incidentType === "card",
-  );
+  // Score display
+  const homeScore = score?.homeScore ?? match.score?.fullTime?.home;
+  const awayScore = score?.awayScore ?? match.score?.fullTime?.away;
+  const homeHalf = score?.homeScoreHalfTime ?? match.score?.halfTime?.home;
+  const awayHalf = score?.awayScoreHalfTime ?? match.score?.halfTime?.away;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-5">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-400 flex-wrap">
         <Link href="/" className="hover:text-green-600 transition-colors">
@@ -163,6 +202,7 @@ export default async function MatchDetailPage({ params }: Props) {
       <div
         className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${isLive ? "border-red-200" : "border-gray-100"}`}
       >
+        {/* Header */}
         <div className="bg-gray-50 border-b border-gray-100 px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {match.competition.emblem && (
@@ -195,8 +235,10 @@ export default async function MatchDetailPage({ params }: Props) {
           </span>
         </div>
 
+        {/* Teams & Score */}
         <div className="px-6 py-8">
           <div className="flex items-center justify-between gap-4">
+            {/* Home */}
             <Link
               href={`/clubs/${match.homeTeam.id}`}
               className="flex flex-col items-center gap-3 flex-1 hover:opacity-80 transition-opacity group"
@@ -229,18 +271,18 @@ export default async function MatchDetailPage({ params }: Props) {
               </span>
             </Link>
 
+            {/* Score */}
             <div className="flex flex-col items-center shrink-0">
-              {isFinished || isLive ? (
+              {hasStarted ? (
                 <>
                   <div className="text-5xl sm:text-6xl font-black text-gray-900 tabular-nums">
-                    {match.score.fullTime.home ?? 0}
-                    <span className="text-gray-200 mx-2">—</span>
-                    {match.score.fullTime.away ?? 0}
+                    {homeScore ?? 0}
+                    <span className="text-gray-300 mx-2">–</span>
+                    {awayScore ?? 0}
                   </div>
-                  {match.score.halfTime.home !== null && (
+                  {homeHalf != null && (
                     <div className="text-xs text-gray-400 mt-1">
-                      YV: {match.score.halfTime.home}—
-                      {match.score.halfTime.away}
+                      YV: {homeHalf}–{awayHalf}
                     </div>
                   )}
                   {isFinished && match.score.winner && (
@@ -266,6 +308,7 @@ export default async function MatchDetailPage({ params }: Props) {
               )}
             </div>
 
+            {/* Away */}
             <Link
               href={`/clubs/${match.awayTeam.id}`}
               className="flex flex-col items-center gap-3 flex-1 hover:opacity-80 transition-opacity group"
@@ -300,539 +343,439 @@ export default async function MatchDetailPage({ params }: Props) {
           </div>
         </div>
 
+        {/* Footer info */}
         <div className="bg-gray-50 border-t border-gray-100 px-6 py-3 flex flex-wrap gap-4 justify-center text-xs text-gray-500">
           <span>📅 {formatMatchDate(match.utcDate)}</span>
-          {match.venue && <span>🏟 {match.venue}</span>}
-          {match.referees?.[0] && <span>🟡 {match.referees[0].name}</span>}
+          {location?.stadium && <span>🏟 {location.stadium}</span>}
+          {location?.city && <span>📍 {location.city}</span>}
+          {referee?.name && <span>🟡 {referee.name}</span>}
+          {match.referees?.[0] && !referee?.name && (
+            <span>🟡 {match.referees[0].name}</span>
+          )}
         </div>
       </div>
 
-      {keyIncidents.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="font-bold text-gray-900">📋 Match Voqealari</h2>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {keyIncidents.map((incident: any, i: number) => {
-              const isHome = incident.isHome;
-              const icon = getIncidentIcon(incident);
-              const playerName = incident.player?.name || "";
-              const assistName = incident.assist1?.name || "";
-              const min = incident.time ? `${incident.time}'` : "";
-
-              return (
-                <div
-                  key={i}
-                  className={`flex items-center gap-3 px-4 py-2.5 ${isHome ? "" : "flex-row-reverse"}`}
-                >
-                  <span className="text-xs text-gray-400 w-8 text-center font-mono shrink-0">
-                    {min}
-                  </span>
-                  <span className="text-base shrink-0">{icon}</span>
-                  <div
-                    className={`flex-1 ${isHome ? "text-left" : "text-right"}`}
-                  >
-                    <span className="text-sm font-semibold text-gray-800">
-                      {playerName}
-                    </span>
-                    {assistName && (
-                      <span className="text-xs text-gray-400 ml-1">
-                        ({assistName})
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    className={`w-5 h-5 shrink-0 ${isHome ? "" : "order-first"}`}
-                  >
-                    {isHome
-                      ? match.homeTeam.crest && (
-                          <Image
-                            src={match.homeTeam.crest}
-                            alt=""
-                            width={20}
-                            height={20}
-                            className="object-contain"
-                          />
-                        )
-                      : match.awayTeam.crest && (
-                          <Image
-                            src={match.awayTeam.crest}
-                            alt=""
-                            width={20}
-                            height={20}
-                            className="object-contain"
-                          />
-                        )}
-                  </div>
+      {/* ── Odds ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h2 className="font-bold text-gray-900">
+            📈 Pul tikish koeffitsientlari
+          </h2>
+        </div>
+        {odds ? (
+          <div className="p-5">
+            <div className="grid grid-cols-3 gap-3">
+              {/* Home win */}
+              <div
+                className={`rounded-xl p-4 text-center border-2 ${
+                  odds.homeWin
+                    ? "border-blue-200 bg-blue-50"
+                    : "border-gray-100 bg-gray-50"
+                }`}
+              >
+                <div className="text-xs text-gray-500 mb-1">
+                  🏠 Uy g'alabasi
                 </div>
-              );
-            })}
+                <div className="text-2xl font-black text-blue-600">
+                  {odds.homeWin ?? odds["1"] ?? "—"}
+                </div>
+              </div>
+              {/* Draw */}
+              <div
+                className={`rounded-xl p-4 text-center border-2 ${
+                  odds.draw
+                    ? "border-gray-200 bg-gray-50"
+                    : "border-gray-100 bg-gray-50"
+                }`}
+              >
+                <div className="text-xs text-gray-500 mb-1">🤝 Durrang</div>
+                <div className="text-2xl font-black text-gray-600">
+                  {odds.draw ?? odds["X"] ?? "—"}
+                </div>
+              </div>
+              {/* Away win */}
+              <div
+                className={`rounded-xl p-4 text-center border-2 ${
+                  odds.awayWin
+                    ? "border-red-200 bg-red-50"
+                    : "border-gray-100 bg-gray-50"
+                }`}
+              >
+                <div className="text-xs text-gray-500 mb-1">
+                  ✈️ Mehmon g'alabasi
+                </div>
+                <div className="text-2xl font-black text-red-500">
+                  {odds.awayWin ?? odds["2"] ?? "—"}
+                </div>
+              </div>
+            </div>
+            {odds.provider && (
+              <div className="text-xs text-gray-400 text-center mt-3">
+                Manba: {odds.provider}
+              </div>
+            )}
+          </div>
+        ) : (
+          <EmptyState
+            icon="📊"
+            text="Koeffitsient ma'lumotlari hali mavjud emas"
+          />
+        )}
+      </div>
+
+      {/* ── Statistics tabs ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+          <h2 className="font-bold text-gray-900">📊 Match Statistikasi</h2>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" />
+              {match.homeTeam.shortName}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-red-400 inline-block" />
+              {match.awayTeam.shortName}
+            </span>
           </div>
         </div>
-      )}
 
-      {statsGroups.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="font-bold text-gray-900">📊 Match Statistikasi</h2>
+        {statsAll.length > 0 ? (
+          <div className="divide-y divide-gray-50">
+            {/* Umumiy */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                Umumiy
+              </div>
+              {statsAll.map((s, i) => (
+                <StatRow
+                  key={i}
+                  title={s.title}
+                  home={s.home}
+                  away={s.away}
+                  highlighted={s.highlighted}
+                />
+              ))}
+            </div>
+            {/* Birinchi yarm */}
+            {statsFirst.length > 0 && (
+              <div className="px-6 py-5 space-y-4">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                  1-yarm
+                </div>
+                {statsFirst.map((s, i) => (
+                  <StatRow
+                    key={i}
+                    title={s.title}
+                    home={s.home}
+                    away={s.away}
+                    highlighted={s.highlighted}
+                  />
+                ))}
+              </div>
+            )}
+            {/* Ikkinchi yarm */}
+            {statsSecond.length > 0 && (
+              <div className="px-6 py-5 space-y-4">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                  2-yarm
+                </div>
+                {statsSecond.map((s, i) => (
+                  <StatRow
+                    key={i}
+                    title={s.title}
+                    home={s.home}
+                    away={s.away}
+                    highlighted={s.highlighted}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-          <div className="px-6 py-5 space-y-6">
-            {statsGroups.map((group: any, gi: number) => (
-              <div key={gi}>
-                {group.groupName && (
-                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-                    {group.groupName}
-                  </div>
-                )}
-                <div className="space-y-3">
-                  {group.statisticsItems?.map((item: any, ii: number) => {
-                    const hVal = item.home ?? 0;
-                    const aVal = item.away ?? 0;
-                    const hNum =
-                      typeof hVal === "string"
-                        ? parseFloat(hVal)
-                        : Number(hVal);
-                    const aNum =
-                      typeof aVal === "string"
-                        ? parseFloat(aVal)
-                        : Number(aVal);
-                    const isPct =
-                      typeof hVal === "string" && hVal.includes("%");
-                    const total = hNum + aNum || 1;
-                    const hPct = isPct
-                      ? hNum
-                      : Math.round((hNum / total) * 100);
-                    const aPct = isPct ? aNum : 100 - hPct;
+        ) : (
+          <EmptyState
+            icon="📋"
+            text="Statistika ma'lumotlari hali mavjud emas"
+          />
+        )}
+      </div>
 
+      {/* ── Lineups ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+          <h2 className="font-bold text-gray-900">⚽ Tarkib</h2>
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            {Object.entries(POS_COLORS).map(([pos, c]) => (
+              <span key={pos} className="flex items-center gap-1">
+                <span
+                  className="w-3 h-3 rounded-full inline-block"
+                  style={{ backgroundColor: c.bg }}
+                />
+                {POS_LABELS[pos]}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {homeStarters.length > 0 || awayStarters.length > 0 ? (
+          <>
+            <div className="grid grid-cols-2 divide-x divide-gray-100">
+              {/* Home starters */}
+              <div className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  {match.homeTeam.crest && (
+                    <Image
+                      src={match.homeTeam.crest}
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="object-contain"
+                    />
+                  )}
+                  <span className="text-sm font-bold text-gray-700">
+                    {match.homeTeam.shortName}
+                  </span>
+                  {homeFormation && (
+                    <span className="text-xs font-mono text-gray-400 ml-auto">
+                      {homeFormation}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {homeStarters.map((p: any, i: number) => {
+                    const pos = normalizePos(p.position || "M");
+                    const colors = POS_COLORS[pos];
                     return (
-                      <div key={ii}>
-                        <div className="flex justify-between items-center text-sm mb-1.5">
-                          <span className="font-bold text-gray-800 w-12">
-                            {hVal}
-                          </span>
-                          <span className="text-xs text-gray-500 text-center flex-1">
-                            {item.name}
-                          </span>
-                          <span className="font-bold text-gray-800 w-12 text-right">
-                            {aVal}
-                          </span>
-                        </div>
-                        <div className="flex h-2 rounded-full overflow-hidden bg-gray-100">
-                          <div
-                            className="bg-blue-500 transition-all duration-500"
-                            style={{ width: `${hPct}%` }}
-                          />
-                          <div
-                            className="bg-red-400 transition-all duration-500"
-                            style={{ width: `${aPct}%` }}
-                          />
-                        </div>
+                      <div
+                        key={p.player?.id || i}
+                        className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-gray-50"
+                      >
+                        <span
+                          className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: colors.bg }}
+                        >
+                          {p.shirtNumber ?? p.jerseyNumber ?? ""}
+                        </span>
+                        <span className="text-xs text-gray-700 flex-1 truncate">
+                          {p.player?.name || p.name}
+                        </span>
+                        <span className="text-xs font-mono text-gray-400">
+                          {POS_LABELS[pos]}
+                        </span>
                       </div>
                     );
                   })}
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-between text-xs font-semibold">
-            <span className="text-blue-600 flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" />
-              {match.homeTeam.shortName}
-            </span>
-            <span className="text-red-500 flex items-center gap-1.5">
-              {match.awayTeam.shortName}
-              <span className="w-3 h-3 rounded-full bg-red-400 inline-block" />
-            </span>
-          </div>
-        </div>
-      )}
 
-      {homeRows.length > 0 && awayRows.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
-            <h2 className="text-2xl font-bold text-gray-900">⚽ Asosiy Tarkib</h2>
-            <div className="flex items-center gap-3 text-xs text-gray-500">
-              {Object.entries(POS_COLORS).map(([pos, c]) => (
-                <span key={pos} className="flex items-center gap-1">
-                  <span
-                    className="w-3 h-3 rounded-full inline-block"
-                    style={{ backgroundColor: c.bg }}
-                  />
-                  {POS_LABELS[pos]}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="p-3 sm:p-5">
-            <div
-              className="relative rounded-2xl overflow-hidden"
-              style={{
-                background:
-                  "linear-gradient(180deg, #16a34a 0%, #15803d 50%, #16a34a 100%)",
-                height: 520,
-              }}
-            >
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage:
-                    "repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 60px, transparent 60px, transparent 120px)",
-                }}
-              />
-
-              <div className="absolute top-3 left-0 right-0 flex justify-between px-5 pointer-events-none z-10">
-                <div className="flex items-center gap-1.5 bg-black/20 rounded px-3 py-1">
-                  {match.homeTeam.crest && (
-                    <img
-                      src={match.homeTeam.crest}
-                      alt=""
-                      width={16}
-                      height={16}
-                      className="object-contain"
-                    />
-                  )}
-                  <span className="text-white text-xs font-bold">
-                    {match.homeTeam.shortName}
-                  </span>
-                  <span className="text-white/60 text-xs font-mono">
-                    {homeFormation}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 bg-black/20 rounded-full px-3 py-1">
-                  <span className="text-white/60 text-xs font-mono">
-                    {awayFormation}
-                  </span>
-                  <span className="text-white text-xs font-bold">
-                    {match.awayTeam.shortName}
-                  </span>
+              {/* Away starters */}
+              <div className="p-4">
+                <div className="flex items-center gap-2 mb-3">
                   {match.awayTeam.crest && (
-                    <img
+                    <Image
                       src={match.awayTeam.crest}
                       alt=""
-                      width={16}
-                      height={16}
+                      width={20}
+                      height={20}
                       className="object-contain"
                     />
                   )}
+                  <span className="text-sm font-bold text-gray-700">
+                    {match.awayTeam.shortName}
+                  </span>
+                  {awayFormation && (
+                    <span className="text-xs font-mono text-gray-400 ml-auto">
+                      {awayFormation}
+                    </span>
+                  )}
                 </div>
-              </div>
-
-              <div
-                className="absolute inset-0 flex "
-                style={{ paddingTop: 44, paddingBottom: 12 }}
-              >
-                <div
-                  className="flex-1 flex flex-row items-stretch"
-                  style={{ paddingLeft: 8, paddingRight: 4 }}
-                >
-                  {[...homeRows].map((row: any[], rowIdx: number) => (
-                    <div
-                      key={`home-row-${rowIdx}`} //
-                      className="flex-1 flex flex-col items-center justify-center gap-8"
-                    >
-                      {row.map((player: any, pIdx: number) => (
-                        <Link
-                          key={`home-p-${player.player?.id || pIdx}-${rowIdx}`}
-                          href={`/players/${player.player?.id}`}
-                        >
-                          <PlayerBadge
-                            key={
-                              player.player?.id || `away-p-${pIdx}-${rowIdx}`
-                            }
-                            player={player}
-                            side="away"
-                          />
-                        </Link>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  className="flex-1 flex items-stretch "
-                  style={{ paddingRight: 8, paddingLeft: 4 }}
-                >
-                  {[...awayRows] //
-                    .reverse()
-                    .map((row: any[], rowIdx: number) => (
+                <div className="space-y-1">
+                  {awayStarters.map((p: any, i: number) => {
+                    const pos = normalizePos(p.position || "M");
+                    const colors = POS_COLORS[pos];
+                    return (
                       <div
-                        key={`away-row-${rowIdx}`}
-                        className="flex-1 flex flex-col items-center justify-center gap-8"
+                        key={p.player?.id || i}
+                        className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-gray-50"
                       >
-                        {row.map((player: any, pIdx: number) => (
-                          <Link
-                            key={`away-p-${player.player?.id || pIdx}-${rowIdx}`}
-                            href={`players/${player.player?.id}`}
-                          >
-                            <PlayerBadge
-                              key={
-                                player.player?.id || `away-p-${pIdx}-${rowIdx}`
-                              }
-                              player={player}
-                              side="away"
-                            />
-                          </Link>
-                        ))}
+                        <span
+                          className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: colors.bg }}
+                        >
+                          {p.shirtNumber ?? p.jerseyNumber ?? ""}
+                        </span>
+                        <span className="text-xs text-gray-700 flex-1 truncate">
+                          {p.player?.name || p.name}
+                        </span>
+                        <span className="text-xs font-mono text-gray-400">
+                          {POS_LABELS[pos]}
+                        </span>
                       </div>
-                    ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
-            {/* Home */}
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                {match.homeTeam.crest && (
-                  <Image
-                    src={match.homeTeam.crest}
-                    alt=""
-                    width={20}
-                    height={20}
-                    className="object-contain"
-                  />
-                )}
-                <span className="text-sm font-bold text-gray-700">
-                  {match.homeTeam.shortName}
-                </span>
-              </div>
-              <div className="space-y-1">
-                {homeStarters.map((p: any) => {
-                  const pos = p.position || "M";
-                  const colors = POS_COLORS[pos] || POS_COLORS["M"];
-                  return (
-                    <div
-                      key={p.player?.id}
-                      className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <span
-                        className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: colors.bg }}
-                      >
-                        {p.shirtNumber}
-                      </span>
-                      <span className="text-xs text-gray-700 flex-1 truncate">
-                        {p.player?.name}
-                      </span>
-                      <span className="text-xs font-mono text-gray-400">
-                        {POS_LABELS[pos]}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            {/* Away */}
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                {match.awayTeam.crest && (
-                  <Image
-                    src={match.awayTeam.crest}
-                    alt=""
-                    width={20}
-                    height={20}
-                    className="object-contain"
-                  />
-                )}
-                <span className="text-sm font-bold text-gray-700">
-                  {match.awayTeam.shortName}
-                </span>
-              </div>
-              <div className="space-y-1">
-                {awayStarters.map((p: any) => {
-                  const pos = p.position || "M";
-                  const colors = POS_COLORS[pos] || POS_COLORS["M"];
-                  return (
-                    <div
-                      key={p.player?.id}
-                      className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <span
-                        className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: colors.bg }}
-                      >
-                        {p.shirtNumber}
-                      </span>
-                      <span className="text-xs text-gray-700 flex-1 truncate">
-                        {p.player?.name}
-                      </span>
-                      <span className="text-xs font-mono text-gray-400">
-                        {POS_LABELS[pos]}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {(homeBench.length > 0 || awayBench.length > 0) && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-900">🪑 Zaxira O'yinchilar</h2>
-          </div>
-          <div className="grid grid-cols-2 divide-x divide-gray-100">
-            <div className="p-4 space-y-1">
-              <div className="flex items-center gap-2 mb-3">
-                {match.homeTeam.crest && (
-                  <Image
-                    src={match.homeTeam.crest}
-                    alt=""
-                    width={18}
-                    height={18}
-                    className="object-contain"
-                  />
-                )}
-                <span className="text-xs font-bold text-gray-600">
-                  {match.homeTeam.shortName}
-                </span>
-              </div>
-              {homeBench.map((p: any) => {
-                const pos = p.position || "M";
-                const colors = POS_COLORS[pos] || POS_COLORS["M"];
-                return (
-                  <div
-                    key={p.player?.id}
-                    className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <span
-                      className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0 opacity-60"
-                      style={{ backgroundColor: colors.bg }}
-                    >
-                      {p.shirtNumber}
-                    </span>
-                    <span className="text-xs text-gray-500 flex-1 truncate">
-                      {p.player?.name}
-                    </span>
-                    <span className="text-xs font-mono text-gray-400">
-                      {POS_LABELS[pos]}
-                    </span>
+            {/* Bench */}
+            {(homeBench.length > 0 || awayBench.length > 0) && (
+              <div className="border-t border-gray-100">
+                <div className="px-6 py-3 border-b border-gray-50">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    🪑 Zaxira
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 divide-x divide-gray-100">
+                  <div className="p-4 space-y-1">
+                    {homeBench.map((p: any, i: number) => {
+                      const pos = normalizePos(p.position || "M");
+                      const colors = POS_COLORS[pos];
+                      return (
+                        <div
+                          key={p.player?.id || i}
+                          className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-gray-50"
+                        >
+                          <span
+                            className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0 opacity-50"
+                            style={{ backgroundColor: colors.bg }}
+                          >
+                            {p.shirtNumber ?? p.jerseyNumber ?? ""}
+                          </span>
+                          <span className="text-xs text-gray-400 flex-1 truncate">
+                            {p.player?.name || p.name}
+                          </span>
+                          <span className="text-xs font-mono text-gray-300">
+                            {POS_LABELS[pos]}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-            <div className="p-4 space-y-1">
-              <div className="flex items-center gap-2 mb-3">
-                {match.awayTeam.crest && (
-                  <Image
-                    src={match.awayTeam.crest}
-                    alt=""
-                    width={18}
-                    height={18}
-                    className="object-contain"
-                  />
-                )}
-                <span className="text-xs font-bold text-gray-600">
-                  {match.awayTeam.shortName}
-                </span>
-              </div>
-              {awayBench.map((p: any) => {
-                const pos = p.position || "M";
-                const colors = POS_COLORS[pos] || POS_COLORS["M"];
-                return (
-                  <div
-                    key={p.player?.id}
-                    className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <span
-                      className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0 opacity-60"
-                      style={{ backgroundColor: colors.bg }}
-                    >
-                      {p.shirtNumber}
-                    </span>
-                    <span className="text-xs text-gray-500 flex-1 truncate">
-                      {p.player?.name}
-                    </span>
-                    <span className="text-xs font-mono text-gray-400">
-                      {POS_LABELS[pos]}
-                    </span>
+                  <div className="p-4 space-y-1">
+                    {awayBench.map((p: any, i: number) => {
+                      const pos = normalizePos(p.position || "M");
+                      const colors = POS_COLORS[pos];
+                      return (
+                        <div
+                          key={p.player?.id || i}
+                          className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-gray-50"
+                        >
+                          <span
+                            className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0 opacity-50"
+                            style={{ backgroundColor: colors.bg }}
+                          >
+                            {p.shirtNumber ?? p.jerseyNumber ?? ""}
+                          </span>
+                          <span className="text-xs text-gray-400 flex-1 truncate">
+                            {p.player?.name || p.name}
+                          </span>
+                          <span className="text-xs font-mono text-gray-300">
+                            {POS_LABELS[pos]}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <EmptyState icon="👥" text="Tarkib ma'lumotlari hali mavjud emas" />
+        )}
+      </div>
 
-      {(isFinished || isLive) && homeRows.length === 0 && (
-        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-8 text-center">
-          <div className="text-3xl mb-2">📋</div>
-          <div className="text-gray-500 text-sm font-medium">
-            Tarkib ma'lumoti mavjud emas
-          </div>
+      {/* ── Highlights ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h2 className="font-bold text-gray-900">🎬 Highlights</h2>
         </div>
-      )}
+        {highlights?.url ? (
+          <div className="p-5">
+            <a
+              href={highlights.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl hover:bg-green-50 hover:border-green-200 border border-gray-100 transition-all group"
+            >
+              <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center shrink-0">
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-gray-800 group-hover:text-green-600 transition-colors">
+                  {match.homeTeam.shortName} vs {match.awayTeam.shortName} —
+                  Highlights
+                </div>
+                <div className="text-xs text-gray-400 truncate mt-0.5">
+                  {highlights.url}
+                </div>
+              </div>
+              <svg
+                className="w-5 h-5 text-gray-400 group-hover:text-green-500 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
+            </a>
+          </div>
+        ) : (
+          <EmptyState icon="🎬" text="Highlights hali mavjud emas" />
+        )}
+      </div>
 
+      {/* ── Team links ── */}
       <div className="grid grid-cols-2 gap-4">
-        <Link
-          href={`/clubs/${match.homeTeam.id}`}
-          className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 hover:shadow-md hover:border-green-200 transition-all group"
-        >
-          {match.homeTeam.crest && (
-            <Image
-              src={match.homeTeam.crest}
-              alt={match.homeTeam.name}
-              width={36}
-              height={36}
-              className="object-contain"
-            />
-          )}
-          <div>
-            <div className="text-xs text-gray-400">Uy egasi</div>
-            <div className="font-bold text-gray-800 group-hover:text-green-600 transition-colors text-sm">
-              {match.homeTeam.name}
-            </div>
-          </div>
-          <svg
-            className="w-4 h-4 text-gray-300 group-hover:text-green-500 ml-auto"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        {[
+          { team: match.homeTeam, label: "Uy egasi" },
+          { team: match.awayTeam, label: "Mehmon" },
+        ].map(({ team, label }) => (
+          <Link
+            key={team.id}
+            href={`/clubs/${team.id}`}
+            className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 hover:shadow-md hover:border-green-200 transition-all group"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </Link>
-        <Link
-          href={`/clubs/${match.awayTeam.id}`}
-          className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 hover:shadow-md hover:border-green-200 transition-all group"
-        >
-          {match.awayTeam.crest && (
-            <Image
-              src={match.awayTeam.crest}
-              alt={match.awayTeam.name}
-              width={36}
-              height={36}
-              className="object-contain"
-            />
-          )}
-          <div>
-            <div className="text-xs text-gray-400">Mehmon</div>
-            <div className="font-bold text-gray-800 group-hover:text-green-600 transition-colors text-sm">
-              {match.awayTeam.name}
+            {team.crest && (
+              <Image
+                src={team.crest}
+                alt={team.name}
+                width={36}
+                height={36}
+                className="object-contain"
+              />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-gray-400">{label}</div>
+              <div className="font-bold text-gray-800 group-hover:text-green-600 transition-colors text-sm truncate">
+                {team.name}
+              </div>
             </div>
-          </div>
-          <svg
-            className="w-4 h-4 text-gray-300 group-hover:text-green-500 ml-auto"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </Link>
+            <svg
+              className="w-4 h-4 text-gray-300 group-hover:text-green-500 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </Link>
+        ))}
       </div>
     </div>
   );

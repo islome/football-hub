@@ -87,7 +87,6 @@ export async function getMatchDetail(eventId: string) {
   } catch { return null; }
 }
 
-/** Hisobot (score) */
 export async function getMatchScore(eventId: string) {
   try {
     const data = await apiFetch<any>("football-get-match-score", { eventid: eventId });
@@ -95,7 +94,27 @@ export async function getMatchScore(eventId: string) {
   } catch { return null; }
 }
 
-/** Highlights video linki */
+export async function getMatchAllStats(eventId: string) {
+  try {
+    const data = await apiFetch<any>("football-get-match-all-stats", { eventid: eventId });
+    return data?.response?.stats || [];
+  } catch { return []; }
+}
+
+export async function getMatchFirstHalfStats(eventId: string) {
+  try {
+    const data = await apiFetch<any>("football-get-match-firstHalf-stats", { eventid: eventId });
+    return data?.response?.stats || [];
+  } catch { return []; }
+}
+
+export async function getMatchSecondHalfStats(eventId: string) {
+  try {
+    const data = await apiFetch<any>("football-get-match-secondhalf-stats", { eventid: eventId });
+    return data?.response?.stats || [];
+  } catch { return []; }
+}
+
 export async function getMatchHighlights(eventId: string) {
   try {
     const data = await apiFetch<any>("football-get-match-highlights", { eventid: eventId });
@@ -103,7 +122,6 @@ export async function getMatchHighlights(eventId: string) {
   } catch { return null; }
 }
 
-/** Stadium / location */
 export async function getMatchLocation(eventId: string) {
   try {
     const data = await apiFetch<any>("football-get-match-location", { eventid: eventId });
@@ -111,7 +129,6 @@ export async function getMatchLocation(eventId: string) {
   } catch { return null; }
 }
 
-/** Referee */
 export async function getMatchReferee(eventId: string) {
   try {
     const data = await apiFetch<any>("football-get-match-referee", { eventid: eventId });
@@ -119,54 +136,53 @@ export async function getMatchReferee(eventId: string) {
   } catch { return null; }
 }
 
-// ════════════════════════════════════════════════════════════════
-// 📊 STATISTICS (all / first half / second half)
-// ════════════════════════════════════════════════════════════════
-
-export type ParsedStat = {
-  title: string;
-  key: string;
-  home: string | number | null;
-  away: string | number | null;
-  highlighted: "home" | "away" | "equal";
-  format?: string;
-};
-
-function flattenStats(data: any): ParsedStat[] {
-  const raw: any[] = data?.response?.stats || [];
-  return raw
-    .flatMap((category: any) =>
-      (category.stats || []).filter((s: any) => s.type !== "title")
-    )
-    .map((s: any) => ({
-      title: s.title,
-      key: s.key,
-      home: s.stats?.[0] ?? null,
-      away: s.stats?.[1] ?? null,
-      highlighted: s.highlighted || "equal",
-      format: s.format,
-    }));
+export async function getMatchOdds(eventId: string) {
+  try {
+    const data = await apiFetch<any>("football-event-odds", { eventid: eventId });
+    return data?.response || null;
+  } catch { return null; }
 }
 
-export async function getAllStats(eventId: string): Promise<ParsedStat[]> {
+export async function getMatchLineups(eventId: string) {
   try {
-    const data = await apiFetch<any>("football-get-match-all-stats", { eventid: eventId });
-    return flattenStats(data);
-  } catch { return []; }
+    const [home, away] = await Promise.all([
+      apiFetch<any>("football-get-hometeam-lineup", { eventid: eventId }),
+      apiFetch<any>("football-get-awayteam-lineup", { eventid: eventId }),
+    ]);
+    return {
+      home: home?.response || null,
+      away: away?.response || null,
+    };
+  } catch { return { home: null, away: null }; }
 }
 
-export async function getFirstHalfStats(eventId: string): Promise<ParsedStat[]> {
-  try {
-    const data = await apiFetch<any>("football-get-match-firstHalf-stats", { eventid: eventId });
-    return flattenStats(data);
-  } catch { return []; }
-}
+export async function getFullMatchData(eventId: string) {
+  const [detail, score, statsAll, statsFirst, statsSecond, highlights, location, referee, odds, lineups] =
+    await Promise.allSettled([
+      getMatchDetail(eventId),
+      getMatchScore(eventId),
+      getMatchAllStats(eventId),
+      getMatchFirstHalfStats(eventId),
+      getMatchSecondHalfStats(eventId),
+      getMatchHighlights(eventId),
+      getMatchLocation(eventId),
+      getMatchReferee(eventId),
+      getMatchOdds(eventId),
+      getMatchLineups(eventId),
+    ]);
 
-export async function getSecondHalfStats(eventId: string): Promise<ParsedStat[]> {
-  try {
-    const data = await apiFetch<any>("football-get-match-secondhalf-stats", { eventid: eventId });
-    return flattenStats(data);
-  } catch { return []; }
+  return {
+    detail:      detail.status      === "fulfilled" ? detail.value      : null,
+    score:       score.status       === "fulfilled" ? score.value       : null,
+    statsAll:    statsAll.status    === "fulfilled" ? statsAll.value    : [],
+    statsFirst:  statsFirst.status  === "fulfilled" ? statsFirst.value  : [],
+    statsSecond: statsSecond.status === "fulfilled" ? statsSecond.value : [],
+    highlights:  highlights.status  === "fulfilled" ? highlights.value  : null,
+    location:    location.status    === "fulfilled" ? location.value    : null,
+    referee:     referee.status     === "fulfilled" ? referee.value     : null,
+    odds:        odds.status        === "fulfilled" ? odds.value        : null,
+    lineups:     lineups.status     === "fulfilled" ? lineups.value     : { home: null, away: null },
+  };
 }
 
 // ─── Lineups ──────────────────────────────────────────────────
@@ -183,45 +199,6 @@ export async function getLineups(eventId: string) {
   } catch { return { home: null, away: null }; }
 }
 
-// ════════════════════════════════════════════════════════════════
-// 🚀 PARALLEL — Bir chaqiruvda hammasi
-// ════════════════════════════════════════════════════════════════
-
-export async function getFullMatchData(eventId: string) {
-  const [
-    detail,
-    score,
-    location,
-    referee,
-    highlights,
-    lineups,
-    statsAll,
-    statsFirst,
-    statsSecond,
-  ] = await Promise.allSettled([
-    getMatchDetail(eventId),
-    getMatchScore(eventId),
-    getMatchLocation(eventId),
-    getMatchReferee(eventId),
-    getMatchHighlights(eventId),
-    getLineups(eventId),
-    getAllStats(eventId),
-    getFirstHalfStats(eventId),
-    getSecondHalfStats(eventId),
-  ]);
-
-  return {
-    detail:      detail.status      === "fulfilled" ? detail.value      : null,
-    score:       score.status       === "fulfilled" ? score.value       : null,
-    location:    location.status    === "fulfilled" ? location.value    : null,
-    referee:     referee.status     === "fulfilled" ? referee.value     : null,
-    highlights:  highlights.status  === "fulfilled" ? highlights.value  : null,
-    lineups:     lineups.status     === "fulfilled" ? lineups.value     : { home: null, away: null },
-    statsAll:    statsAll.status    === "fulfilled" ? statsAll.value    : [],
-    statsFirst:  statsFirst.status  === "fulfilled" ? statsFirst.value  : [],
-    statsSecond: statsSecond.status === "fulfilled" ? statsSecond.value : [],
-  };
-}
 
 // ════════════════════════════════════════════════════════════════
 // 🎯 STAT HELPERS
@@ -233,17 +210,7 @@ const TOP_KEYS = [
   "fouls", "corners",
 ];
 
-export function getTopStats(stats: ParsedStat[]) {
-  return stats.filter(s => TOP_KEYS.includes(s.key));
-}
 
-export function getPossession(stats: ParsedStat[]): { home: number; away: number } {
-  const s = stats.find(s => s.key === "BallPossesion");
-  return {
-    home: Number(s?.home) || 0,
-    away: Number(s?.away) || 0,
-  };
-}
 
 // ════════════════════════════════════════════════════════════════
 // 👥 TEAM endpoints — lib/football.ts ga qo'shing
